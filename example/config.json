@@ -1,0 +1,23 @@
+{
+  "claude": {
+    "args": ["--dangerously-skip-permissions", "--allow-dangerously-skip-permissions"],
+    "interactive": ["--ide"],
+    "print": [],
+    "stream": ["--output-format", "stream-json", "--verbose", "--include-partial-messages"]
+  },
+  "codex": {
+    "args": ["--dangerously-bypass-approvals-and-sandbox", "-c", "web_search=\"live\""],
+    "interactive": [],
+    "print": [],
+    "stream": ["--json"]
+  },
+  "scenes": {
+    "default": "default",
+    "aliases": {
+      "d": "default",
+      "ai": "ai-expert",
+      "code": "code-expert",
+      "it": "it-expert"
+    }
+  }
+}
