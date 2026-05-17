@@ -3,11 +3,18 @@ import { chmod, mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 import { downloadWithProgress } from "./download";
-import { parseInvocation, UsageError } from "./parse";
+import { DEFAULT_AUTO_MAX_ITER, parseInvocation, UsageError, type Invocation, type LoopSpec } from "./parse";
 import { runInvocation } from "./run";
 import { listAllSceneNames } from "./scenes";
 import { getConfigDir } from "./config";
 import { ensureInitialized } from "./init";
+import {
+  buildContinuePrompt,
+  buildProtocolPrompt,
+  createAutoLoopState,
+  parseHandoff,
+  snapshotState,
+} from "./handoff";
 import pkg from "../package.json" with { type: "json" };
 
 // `build.ts` injects BUILD_* via `--define` at compile time.
@@ -27,10 +34,15 @@ function buildHelpText(): string {
   return `${NAME} ${VERSION} — Launch Claude Code or Codex with shared scene prompts
 
 Usage:
-  ${NAME} [scene]                  Interactive REPL
-  ${NAME} [scene] 'prompt'         Single-shot run (print)
-  ${NAME} -s [scene] 'prompt'      Single-shot run with stream-JSON renderer
-  ${NAME} --loop N [scene] 'prompt'  Run the same single-shot N times serially
+  ${NAME} [scene]                       Interactive REPL
+  ${NAME} [scene] 'prompt'              Single-shot run (print)
+  ${NAME} -s [scene] 'prompt'           Single-shot run with stream-JSON renderer
+  ${NAME} --loop N [scene] 'prompt'     Run the same single-shot N times serially
+  ${NAME} --loop auto [scene] 'prompt'  Auto loop: agent emits a handoff each turn,
+                                        stops when handoff.status="end" or after --max-iter
+
+Auto-loop options:
+  --max-iter N                          Safety cap for --loop auto (default ${DEFAULT_AUTO_MAX_ITER})
 
 Prompt is a single positional argument. Use shell quoting for any complexity:
   ${NAME} d 'multi-line
@@ -179,9 +191,11 @@ async function handleMetaCommand(arg: string | undefined): Promise<number | null
   }
 }
 
-function parseFlags(args: string[]): { args: string[]; wantStream: boolean; loopCount: number } {
+function parseFlags(args: string[]): { args: string[]; wantStream: boolean; loop: LoopSpec } {
   let wantStream = false;
-  let loopCount = 1;
+  let loopValue: string | null = null;
+  let maxIter = DEFAULT_AUTO_MAX_ITER;
+  let sawMaxIter = false;
   const filtered: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -192,22 +206,43 @@ function parseFlags(args: string[]): { args: string[]; wantStream: boolean; loop
     }
     if (arg === "--loop") {
       const next = args[i + 1];
-      if (next === undefined) throw new UsageError("`--loop` requires a value.");
-      loopCount = parseLoopCount(next);
+      if (next === undefined) throw new UsageError('`--loop` requires a value (positive integer or "auto").');
+      loopValue = next;
+      i++;
+      continue;
+    }
+    if (arg === "--max-iter") {
+      const next = args[i + 1];
+      if (next === undefined) throw new UsageError("`--max-iter` requires a positive integer value.");
+      if (!/^\d+$/.test(next) || Number(next) < 1) {
+        throw new UsageError(`Invalid --max-iter value "${next}". Expected a positive integer.`);
+      }
+      maxIter = Number(next);
+      sawMaxIter = true;
       i++;
       continue;
     }
     filtered.push(arg);
   }
 
-  return { args: filtered, wantStream, loopCount };
-}
-
-function parseLoopCount(raw: string): number {
-  if (!/^\d+$/.test(raw) || Number(raw) < 1) {
-    throw new UsageError(`Invalid loop count "${raw}". Expected a positive integer.`);
+  let loop: LoopSpec = { kind: "fixed", count: 1 };
+  if (loopValue !== null) {
+    if (loopValue === "auto") {
+      loop = { kind: "auto", maxIter };
+    } else {
+      if (!/^\d+$/.test(loopValue) || Number(loopValue) < 1) {
+        throw new UsageError(`Invalid --loop value "${loopValue}". Expected a positive integer or "auto".`);
+      }
+      if (sawMaxIter) {
+        throw new UsageError("`--max-iter` only applies to `--loop auto`.");
+      }
+      loop = { kind: "fixed", count: Number(loopValue) };
+    }
+  } else if (sawMaxIter) {
+    throw new UsageError("`--max-iter` requires `--loop auto`.");
   }
-  return Number(raw);
+
+  return { args: filtered, wantStream, loop };
 }
 
 function getRawArgs(argv: string[]): string[] {
@@ -235,6 +270,123 @@ function looksLikeScriptPath(value: string | undefined): boolean {
   return /\.(?:[cm]?[jt]sx?)$/i.test(value);
 }
 
+async function runFixedLoop(invocation: Invocation, count: number): Promise<number> {
+  let lastExit = 0;
+  for (let i = 1; i <= count; i++) {
+    if (count > 1) {
+      process.stderr.write(`==> loop ${i}/${count}\n`);
+    }
+    lastExit = await runInvocation(invocation);
+    if (lastExit !== 0) break;
+  }
+  return lastExit;
+}
+
+async function runAutoLoop(invocation: Invocation, maxIter: number): Promise<number> {
+  if (!invocation.userText) {
+    throw new UsageError("`--loop auto` requires a prompt argument.");
+  }
+  const originalPrompt = invocation.userText;
+  const state = createAutoLoopState(maxIter);
+  const protocolSuffix = buildProtocolPrompt(maxIter);
+
+  const server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch(req) {
+      const url = new URL(req.url);
+      if (url.pathname === "/handoff" || url.pathname === "/") {
+        return new Response(JSON.stringify(snapshotState(state), null, 2), {
+          headers: { "content-type": "application/json; charset=utf-8" },
+        });
+      }
+      return new Response("Not Found", { status: 404 });
+    },
+  });
+
+  process.stderr.write(
+    `==> --loop auto (max ${maxIter}) — state: http://${server.hostname}:${server.port}/handoff\n`,
+  );
+
+  const stop = () => {
+    try {
+      server.stop(true);
+    } catch {
+      // best effort
+    }
+  };
+
+  try {
+    while (true) {
+      if (state.stopRequested) break;
+      if (state.iteration >= maxIter) {
+        process.stderr.write(`==> --loop auto: max-iter ${maxIter} reached, stopping.\n`);
+        break;
+      }
+
+      state.iteration += 1;
+      state.updatedAt = Date.now();
+      process.stderr.write(`==> loop ${state.iteration}/${maxIter} (auto)\n`);
+
+      let accum = "";
+      const onAgentText = (t: string) => {
+        accum += t;
+      };
+
+      const promptOverride = state.handoff ? buildContinuePrompt(originalPrompt, state.handoff) : undefined;
+
+      const exit = await runInvocation(invocation, {
+        onAgentText,
+        promptOverride,
+        systemSuffix: protocolSuffix,
+      });
+
+      if (exit !== 0) {
+        state.lastError = `child exited with code ${exit}`;
+        state.updatedAt = Date.now();
+        return exit;
+      }
+
+      const parsed = parseHandoff(accum);
+      if (!parsed) {
+        state.parseFailures += 1;
+        state.lastError = `no handoff sentinel found in turn ${state.iteration}`;
+        state.updatedAt = Date.now();
+        process.stderr.write(
+          `[warn] no handoff in turn ${state.iteration} (consecutive failures=${state.parseFailures})\n`,
+        );
+        if (state.parseFailures >= 3) {
+          process.stderr.write(
+            `==> --loop auto: ${state.parseFailures} consecutive parse failures, aborting.\n`,
+          );
+          return 3;
+        }
+        continue;
+      }
+
+      state.parseFailures = 0;
+      state.handoff = parsed.handoff;
+      state.rawHandoffText = parsed.raw;
+      state.history.push(parsed.handoff);
+      state.updatedAt = Date.now();
+      state.lastError = undefined;
+
+      process.stderr.write(
+        `==> handoff status=${parsed.handoff.status}  summary="${parsed.handoff.summary}"\n`,
+      );
+
+      if (parsed.handoff.status === "end") {
+        state.stopRequested = true;
+        break;
+      }
+    }
+
+    return 0;
+  } finally {
+    stop();
+  }
+}
+
 const rawArgs = getRawArgs(process.argv);
 
 const metaExit = await handleMetaCommand(rawArgs[0]);
@@ -243,18 +395,15 @@ if (metaExit !== null) process.exit(metaExit);
 ensureInitialized();
 
 try {
-  const { args, wantStream, loopCount } = parseFlags(rawArgs);
-  const invocation = parseInvocation(args, wantStream, loopCount);
+  const { args, wantStream, loop } = parseFlags(rawArgs);
+  const invocation = parseInvocation(args, wantStream, loop);
 
-  let lastExit = 0;
-  for (let i = 1; i <= invocation.loopCount; i++) {
-    if (invocation.loopCount > 1) {
-      process.stderr.write(`==> loop ${i}/${invocation.loopCount}\n`);
-    }
-    lastExit = await runInvocation(invocation);
-    if (lastExit !== 0) break;
-  }
-  process.exit(lastExit);
+  const exitCode =
+    invocation.loop.kind === "auto"
+      ? await runAutoLoop(invocation, invocation.loop.maxIter)
+      : await runFixedLoop(invocation, invocation.loop.count);
+
+  process.exit(exitCode);
 } catch (error) {
   if (error instanceof UsageError) {
     process.stderr.write(`${error.message}\n\n${buildHelpText()}`);

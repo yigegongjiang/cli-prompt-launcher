@@ -1,6 +1,6 @@
 {
   "name": "jjlauncher",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Launch Claude Code or Codex with shared scene prompts",
   "type": "module",
   "private": true,

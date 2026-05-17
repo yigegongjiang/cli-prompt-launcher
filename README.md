@@ -15,10 +15,12 @@ curl -fsSL https://raw.githubusercontent.com/yigegongjiang/cli-prompt-launcher/m
 ## 用法
 
 ```
-jjlauncher [scene]                  Interactive REPL
-jjlauncher [scene] 'prompt'         Single-shot (print)
-jjlauncher -s [scene] 'prompt'      Single-shot + stream-JSON renderer
-jjlauncher --loop N [scene] 'prompt'  Run the same single-shot N times serially
+jjlauncher [scene]                          Interactive REPL
+jjlauncher [scene] 'prompt'                 Single-shot (print)
+jjlauncher -s [scene] 'prompt'              Single-shot + stream-JSON renderer
+jjlauncher --loop N [scene] 'prompt'        Run the same single-shot N times serially
+jjlauncher --loop auto [scene] 'prompt'     Auto loop: agent emits a handoff each turn,
+                                            stops when handoff.status="end" or after --max-iter
 ```
 
 - 默认引擎 Claude Code: `jjlauncher d`. 前缀 `.` 走 Codex: `jjlauncher .d`.
@@ -53,6 +55,48 @@ jjlauncher d <<<"I'm here"          # here-string (bash/zsh)
 jjlauncher d 'hi' --loop 3          # 串行跑 3 次
 jjlauncher -s code 'review' --loop 5
 ```
+
+### 自动循环 (`--loop auto`)
+
+每一轮跑一个**全新独立 child** (无任何历史), 跨轮唯一通道是 agent 在最终回复末尾输出的 handoff JSON. 父进程读取后注入下一轮的新 agent 作为 `<previous_handoff>`, 直到 agent 自己写 `status="end"` 或达到 `--max-iter` (默认 100) 上限.
+
+```bash
+jjlauncher --loop auto d '把 README 翻译成英文并提交 PR'
+jjlauncher --loop auto -s code 'fix all type errors' --max-iter 50
+```
+
+设计意图: **每轮 agent 上下文全新**, 不背包袱, 不带"试过了, 放弃"的认知偏差 — 像接力赛, 不是马拉松. 状态在 baton, 不在记忆里.
+
+end 门槛: agent 必须**对自身工作非常满意, 任务全部达成, 绝对不需后续 agent 介入** 才能写 end; 否则一律 continue (协议片段由父进程自动注入 system prompt).
+
+handoff 形态 (agent 输出, 父进程消费):
+
+```
+<<JJ_HANDOFF>>
+{
+  "status": "end" | "continue",
+  "iteration": <number>,
+  "summary": "本轮做了什么 (≤80字)",
+  "next_actions": ["下一轮要做的事..."],
+  "blockers": []
+}
+<<JJ_HANDOFF_END>>
+```
+
+启动时 stderr 会打印一个本地观察端点 `http://127.0.0.1:<port>/handoff`, 进程结束自动关闭, 零文件落盘:
+
+```bash
+curl http://127.0.0.1:53811/handoff   # 看当前 baton + iteration + history
+```
+
+终止条件 | exit code:
+
+| 情况 | exit |
+| --- | --- |
+| handoff.status="end" | 0 |
+| 达到 `--max-iter` 上限 | 0 (stderr 警告) |
+| 子进程非 0 退出 | 透传该 code |
+| 连续 3 轮 handoff 解析失败 | 3 |
 
 ## 配置
 

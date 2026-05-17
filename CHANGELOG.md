@@ -2,6 +2,18 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) + [SemVer](https://semver.org/).
 
+## [0.6.0] - 2026-05-17
+
+### Added
+
+- 自动循环 `--loop auto`: 每轮跑全新独立 child (无历史/无 resume), agent 在最终回复末尾以 `<<JJ_HANDOFF>>...<<JJ_HANDOFF_END>>` 输出 JSON baton (status/iteration/summary/next_actions/blockers). 父进程解析后注入下一轮 system prompt 的 `<previous_handoff>`, 直到 status=end 或达 `--max-iter` (默认 100). 协议片段由 jjlauncher 自动追加到 scene system prompt, 不污染普通模式. end 门槛要求 agent "对自身工作非常满意, 绝对不需后续 agent 介入".
+- 本地观察端点: `--loop auto` 启动时 stderr 打印 `http://127.0.0.1:<port>/handoff`, 暴露 iteration/handoff/history JSON 快照, 进程退出自动关闭, 零文件落盘.
+- 退出码: end → 0; max-iter → 0 + 警告; 子进程非 0 → 透传; 连续 3 轮 handoff 解析失败 → 3.
+
+### Changed
+
+- print 模式 stdout 从 `inherit` 改为 `pipe` + 透传, 以便父进程在 `--loop auto` 下扫 sentinel. 原有人眼输出体验不变.
+
 ## [0.5.0] - 2026-05-17
 
 ### Added
@@ -60,6 +72,7 @@
 - 首次运行初始化 `~/.config/cli-prompt-launcher/`.
 - Claude / Codex 流事件格式化输出 (`ClaudeStreamFormatter` / `CodexStreamFormatter`).
 
+[0.6.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.1.0...v0.3.0
