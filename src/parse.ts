@@ -8,11 +8,12 @@ export interface Invocation {
   mode: Mode;
   sceneId: string;
   userText?: string;
+  loopCount: number;
 }
 
 export class UsageError extends Error {}
 
-export function parseInvocation(args: string[], wantStream: boolean): Invocation {
+export function parseInvocation(args: string[], wantStream: boolean, loopCount = 1): Invocation {
   if (args.length > 2) {
     throw new UsageError("Too many arguments. Usage: jjlauncher [scene] [prompt]");
   }
@@ -20,10 +21,12 @@ export function parseInvocation(args: string[], wantStream: boolean): Invocation
   // 0 args → REPL with default scene
   if (args.length === 0) {
     if (wantStream) throw new UsageError("`-s` requires a prompt argument.");
+    if (loopCount > 1) throw new UsageError("`--loop` requires a prompt argument (interactive mode is not loopable).");
     return {
       engine: "claude",
       mode: "interactive",
       sceneId: getDefaultSceneId(),
+      loopCount: 1,
     };
   }
 
@@ -35,10 +38,12 @@ export function parseInvocation(args: string[], wantStream: boolean): Invocation
   // 1 arg → REPL with given scene
   if (args.length === 1) {
     if (wantStream) throw new UsageError("`-s` requires a prompt argument.");
+    if (loopCount > 1) throw new UsageError("`--loop` requires a prompt argument (interactive mode is not loopable).");
     return {
       engine: resolved.engine,
       mode: "interactive",
       sceneId: resolved.sceneId,
+      loopCount: 1,
     };
   }
 
@@ -51,5 +56,6 @@ export function parseInvocation(args: string[], wantStream: boolean): Invocation
     mode: wantStream ? "stream" : "print",
     sceneId: resolved.sceneId,
     userText: prompt,
+    loopCount,
   };
 }

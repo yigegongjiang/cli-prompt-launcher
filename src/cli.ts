@@ -30,6 +30,7 @@ Usage:
   ${NAME} [scene]                  Interactive REPL
   ${NAME} [scene] 'prompt'         Single-shot run (print)
   ${NAME} -s [scene] 'prompt'      Single-shot run with stream-JSON renderer
+  ${NAME} --loop N [scene] 'prompt'  Run the same single-shot N times serially
 
 Prompt is a single positional argument. Use shell quoting for any complexity:
   ${NAME} d 'multi-line
@@ -178,19 +179,35 @@ async function handleMetaCommand(arg: string | undefined): Promise<number | null
   }
 }
 
-function parseFlags(args: string[]): { args: string[]; wantStream: boolean } {
+function parseFlags(args: string[]): { args: string[]; wantStream: boolean; loopCount: number } {
   let wantStream = false;
+  let loopCount = 1;
   const filtered: string[] = [];
 
-  for (const arg of args) {
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
     if (arg === "--stream" || arg === "-s" || arg === "stream") {
       wantStream = true;
+      continue;
+    }
+    if (arg === "--loop") {
+      const next = args[i + 1];
+      if (next === undefined) throw new UsageError("`--loop` requires a value.");
+      loopCount = parseLoopCount(next);
+      i++;
       continue;
     }
     filtered.push(arg);
   }
 
-  return { args: filtered, wantStream };
+  return { args: filtered, wantStream, loopCount };
+}
+
+function parseLoopCount(raw: string): number {
+  if (!/^\d+$/.test(raw) || Number(raw) < 1) {
+    throw new UsageError(`Invalid loop count "${raw}". Expected a positive integer.`);
+  }
+  return Number(raw);
 }
 
 function getRawArgs(argv: string[]): string[] {
@@ -225,12 +242,19 @@ if (metaExit !== null) process.exit(metaExit);
 
 ensureInitialized();
 
-const { args, wantStream } = parseFlags(rawArgs);
-
 try {
-  const invocation = parseInvocation(args, wantStream);
-  const exitCode = await runInvocation(invocation);
-  process.exit(exitCode);
+  const { args, wantStream, loopCount } = parseFlags(rawArgs);
+  const invocation = parseInvocation(args, wantStream, loopCount);
+
+  let lastExit = 0;
+  for (let i = 1; i <= invocation.loopCount; i++) {
+    if (invocation.loopCount > 1) {
+      process.stderr.write(`==> loop ${i}/${invocation.loopCount}\n`);
+    }
+    lastExit = await runInvocation(invocation);
+    if (lastExit !== 0) break;
+  }
+  process.exit(lastExit);
 } catch (error) {
   if (error instanceof UsageError) {
     process.stderr.write(`${error.message}\n\n${buildHelpText()}`);

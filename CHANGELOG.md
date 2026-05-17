@@ -2,6 +2,12 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) + [SemVer](https://semver.org/).
 
+## [0.5.0] - 2026-05-17
+
+### Added
+
+- 循环执行: `--loop N`. 把同一条 single-shot 串行重跑 N 次, 等上一次 child 退出再启下一次. 任一非 0 立即中止并以该退出码返回; preview 与循环序号 (`==> loop i/N`) 每次打印. 仅在带 prompt 的非交互场景可用, REPL / 缺 prompt / 非正整数会直接报错.
+
 ## [0.4.0] - 2026-05-17
 
 ### Changed
@@ -54,6 +60,7 @@
 - 首次运行初始化 `~/.config/cli-prompt-launcher/`.
 - Claude / Codex 流事件格式化输出 (`ClaudeStreamFormatter` / `CodexStreamFormatter`).
 
+[0.5.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.1.0...v0.3.0
 [0.1.0]: https://github.com/yigegongjiang/cli-prompt-launcher/releases/tag/v0.1.0

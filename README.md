@@ -18,6 +18,7 @@ curl -fsSL https://raw.githubusercontent.com/yigegongjiang/cli-prompt-launcher/m
 jjlauncher [scene]                  Interactive REPL
 jjlauncher [scene] 'prompt'         Single-shot (print)
 jjlauncher -s [scene] 'prompt'      Single-shot + stream-JSON renderer
+jjlauncher --loop N [scene] 'prompt'  Run the same single-shot N times serially
 ```
 
 - 默认引擎 Claude Code: `jjlauncher d`. 前缀 `.` 走 Codex: `jjlauncher .d`.
@@ -42,6 +43,15 @@ jjlauncher -s code 'review 这段 diff'
 jjlauncher d "I'm here"             # 切双引号
 jjlauncher d 'I'\''m here'          # POSIX 经典拼接
 jjlauncher d <<<"I'm here"          # here-string (bash/zsh)
+```
+
+### 循环执行
+
+仅非交互场景 (即同时给定 prompt 时) 可用. 等上一次 child 退出再启下一次, 任一次非 0 退出立即中止并返回该退出码.
+
+```bash
+jjlauncher d 'hi' --loop 3          # 串行跑 3 次
+jjlauncher -s code 'review' --loop 5
 ```
 
 ## 配置
