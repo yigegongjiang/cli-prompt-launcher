@@ -168,7 +168,7 @@ async function readUserTextFromTerminal(useEditor: boolean): Promise<string> {
           }).exitCode === 0,
       ) ||
       "vi";
-    const tmpFile = join(tmpdir(), `jj-${process.pid}-${Date.now()}.md`);
+    const tmpFile = join(tmpdir(), `jjlauncher-${process.pid}-${Date.now()}.md`);
     await Bun.write(tmpFile, "");
     try {
       const child = Bun.spawn({
