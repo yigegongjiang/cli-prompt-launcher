@@ -1,11 +1,6 @@
-import { createInterface } from "node:readline/promises";
-import { unlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
 import { getConfiguredArgs } from "./config";
 import { getSceneText } from "./scenes";
-import { UsageError, type Invocation } from "./parse";
+import { type Invocation } from "./parse";
 import { ClaudeStreamFormatter } from "./format-claude-stream";
 import { CodexStreamFormatter } from "./format-codex-stream";
 import { renderLaunchPreview } from "./preview";
@@ -21,17 +16,7 @@ export interface LaunchPlan {
 }
 
 export async function runInvocation(invocation: Invocation): Promise<number> {
-  const needsInput = invocation.mode !== "interactive" || invocation.useEditor;
-  const resolvedInvocation = needsInput
-    ? {
-        ...invocation,
-        userText: await readUserTextFromTerminal(invocation.useEditor),
-      }
-    : invocation;
-
-  const plan = buildLaunchPlan(resolvedInvocation);
-
-  return runCommand(plan);
+  return runCommand(buildLaunchPlan(invocation));
 }
 
 export function buildLaunchPlan(invocation: Invocation): LaunchPlan {
@@ -146,63 +131,4 @@ async function runCommand(plan: LaunchPlan): Promise<number> {
   if (lastLine) processLine(lastLine);
 
   return await child.exited;
-}
-
-async function readUserTextFromTerminal(useEditor: boolean): Promise<string> {
-  if (!process.stdin.isTTY) {
-    throw new UsageError("Non-interactive mode requires a TTY for prompt input.");
-  }
-
-  let userText: string;
-
-  if (useEditor) {
-    const editor =
-      process.env.VISUAL ||
-      process.env.EDITOR ||
-      ["nvim", "vim", "vi"].find(
-        (b) =>
-          Bun.spawnSync({
-            cmd: ["which", b],
-            stdout: "ignore",
-            stderr: "ignore",
-          }).exitCode === 0,
-      ) ||
-      "vi";
-    const tmpFile = join(tmpdir(), `jjlauncher-${process.pid}-${Date.now()}.md`);
-    await Bun.write(tmpFile, "");
-    try {
-      const child = Bun.spawn({
-        cmd: ["sh", "-c", `${editor} "$0"`, tmpFile],
-        stdin: "inherit",
-        stdout: "inherit",
-        stderr: "inherit",
-      });
-      if ((await child.exited) !== 0) throw new UsageError("Editor exited with non-zero status.");
-      userText = (await Bun.file(tmpFile).text()).trim();
-    } finally {
-      await unlink(tmpFile).catch(() => {});
-    }
-  } else {
-    process.stderr.write("\x1b[2m(Enter for newline, :q to submit)\x1b[0m\n");
-    const rl = createInterface({
-      input: process.stdin,
-      output: process.stderr,
-      prompt: "> ",
-    });
-    rl.prompt();
-    const lines: string[] = [];
-    for await (const line of rl) {
-      const ch = line.trimStart()[0];
-      if (ch === ":" || ch === "：") {
-        rl.close();
-        break;
-      }
-      lines.push(line);
-      rl.prompt();
-    }
-    userText = lines.join("\n").trim();
-  }
-
-  if (userText.length === 0) throw new UsageError("Empty prompt.");
-  return userText;
 }

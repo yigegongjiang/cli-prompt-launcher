@@ -2,6 +2,21 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) + [SemVer](https://semver.org/).
 
+## [0.4.0] - 2026-05-17
+
+### Changed
+
+- **Breaking**: prompt 改为位置参数, 一行命令直接喂入: `jjlauncher [scene] 'prompt'`. 依赖 shell 引号 (POSIX 单引号支持跨行 / 特殊符号 / 零转义), 等同 `git commit -m` / `curl -d` / `claude -p` 的标准做法.
+- mode 由参数推导: 无 prompt → REPL; 有 prompt → print; 有 prompt + `-s` → stream.
+- `install.sh` asset 下载改用 `curl --progress-bar` (去掉 `-s` silent), 与 `update` 子命令的进度反馈 UX 对齐. checksums.txt 等小文件仍保持静默. (偏离 cli-template 的"安装静默 / 更新有进度"组合, 选择两端一致.)
+
+### Removed
+
+- 标志 `-p` / `--print` / `print`: 由"是否有 prompt 参数"自动判定, 显式标志冗余.
+- 标志 `-e` / `--editor`: prompt 通过 shell 引号即可, 编辑器路径无价值.
+- 多行交互输入 (`:q` 提交) 与 `readUserTextFromTerminal` 整段: 输入路径只保留 argv 一条, 删除所有交互兜底, 便于脚本/CI 调用.
+- `config.json` 中 `interactive` / `print` / `stream` 段的输入语义不变, 仅触发方式从显式 flag 改为参数推导.
+
 ## [0.3.0] - 2026-05-17
 
 ### Added
@@ -39,5 +54,6 @@
 - 首次运行初始化 `~/.config/cli-prompt-launcher/`.
 - Claude / Codex 流事件格式化输出 (`ClaudeStreamFormatter` / `CodexStreamFormatter`).
 
+[0.4.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.1.0...v0.3.0
 [0.1.0]: https://github.com/yigegongjiang/cli-prompt-launcher/releases/tag/v0.1.0

@@ -15,16 +15,34 @@ curl -fsSL https://raw.githubusercontent.com/yigegongjiang/cli-prompt-launcher/m
 ## 用法
 
 ```
-jjlauncher [scene]               Interactive mode (default)
-jjlauncher -p [scene]            Print mode (multiline input, :q to submit)
-jjlauncher -s [scene]            Stream mode (formatted Claude/Codex JSON events)
-jjlauncher -e [-p|-s] [scene]    Edit prompt in $EDITOR first
+jjlauncher [scene]                  Interactive REPL
+jjlauncher [scene] 'prompt'         Single-shot (print)
+jjlauncher -s [scene] 'prompt'      Single-shot + stream-JSON renderer
 ```
 
 - 默认引擎 Claude Code: `jjlauncher d`. 前缀 `.` 走 Codex: `jjlauncher .d`.
 - 无 scene 参数 → 使用 `scenes.default` (config).
 - 内置 scene: `default` / `ai-expert` / `it-expert` / `code-expert` / `address`.
 - 别名: `d`→`default`, `ai`→`ai-expert`, `it`→`it-expert`, `code`→`code-expert`.
+
+### Prompt 传参
+
+prompt 是单个位置参数, 用 shell 引号 (推荐单引号) 一行喂入. POSIX 单引号内除 `'` 外所有字符 (含换行) 字面保留, **零转义**:
+
+```bash
+jjlauncher d 'hello'
+
+jjlauncher d '多行 prompt
+含 $variable、"双引号"、反斜杠 \、特殊符号 ¥%&* 一概原样'
+
+jjlauncher d "$(cat prompt.md)"     # 文件喂入 (shell 处理, jjlauncher 不需要 -f)
+jjlauncher -s code 'review 这段 diff'
+
+# 内容含 ' 时三种应对 (仍是单行):
+jjlauncher d "I'm here"             # 切双引号
+jjlauncher d 'I'\''m here'          # POSIX 经典拼接
+jjlauncher d <<<"I'm here"          # here-string (bash/zsh)
+```
 
 ## 配置
 

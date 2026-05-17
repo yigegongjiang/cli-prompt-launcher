@@ -3,7 +3,7 @@ import { chmod, mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 import { downloadWithProgress } from "./download";
-import { parseInvocation, type Mode, UsageError } from "./parse";
+import { parseInvocation, UsageError } from "./parse";
 import { runInvocation } from "./run";
 import { listAllSceneNames } from "./scenes";
 import { getConfigDir } from "./config";
@@ -27,10 +27,13 @@ function buildHelpText(): string {
   return `${NAME} ${VERSION} — Launch Claude Code or Codex with shared scene prompts
 
 Usage:
-  ${NAME} [scene]               Interactive mode
-  ${NAME} -p [scene]            Non-interactive text mode (multiline input, :q to submit)
-  ${NAME} -s [scene]            Stream mode (Claude stream-json; Codex exec --json events)
-  ${NAME} -e [-p|-s] [scene]    Edit prompt with $EDITOR
+  ${NAME} [scene]                  Interactive REPL
+  ${NAME} [scene] 'prompt'         Single-shot run (print)
+  ${NAME} -s [scene] 'prompt'      Single-shot run with stream-JSON renderer
+
+Prompt is a single positional argument. Use shell quoting for any complexity:
+  ${NAME} d 'multi-line
+prompt with $vars, "quotes", \\ backslashes — POSIX single-quote keeps it literal'
 
 Scenes:
   ${scenes.join(", ")}
@@ -175,35 +178,19 @@ async function handleMetaCommand(arg: string | undefined): Promise<number | null
   }
 }
 
-function resolveCliMode(args: string[]): {
-  args: string[];
-  mode: Mode;
-  useEditor: boolean;
-} {
-  let mode: Mode = "interactive";
-  let useEditor = false;
+function parseFlags(args: string[]): { args: string[]; wantStream: boolean } {
+  let wantStream = false;
   const filtered: string[] = [];
 
   for (const arg of args) {
-    if (arg === "-e" || arg === "--editor") {
-      useEditor = true;
-      continue;
-    }
-
-    if (arg === "--print" || arg === "-p" || arg === "print") {
-      mode = "print";
-      continue;
-    }
-
     if (arg === "--stream" || arg === "-s" || arg === "stream") {
-      mode = "stream";
+      wantStream = true;
       continue;
     }
-
     filtered.push(arg);
   }
 
-  return { args: filtered, mode, useEditor };
+  return { args: filtered, wantStream };
 }
 
 function getRawArgs(argv: string[]): string[] {
@@ -238,10 +225,10 @@ if (metaExit !== null) process.exit(metaExit);
 
 ensureInitialized();
 
-const { mode, args, useEditor } = resolveCliMode(rawArgs);
+const { args, wantStream } = parseFlags(rawArgs);
 
 try {
-  const invocation = parseInvocation(mode, args, useEditor);
+  const invocation = parseInvocation(args, wantStream);
   const exitCode = await runInvocation(invocation);
   process.exit(exitCode);
 } catch (error) {
