@@ -2,6 +2,12 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) + [SemVer](https://semver.org/).
 
+## [0.7.1] - 2026-05-17
+
+### Changed
+
+- `--loop refine` handoff schema 收敛到极简: `{"status": "end" | "continue"}` 一字段. 移除 `iteration` (父进程自己已经在数, agent 在 refine 模式下根本不知道自己第几轮, 写的值要么瞎填要么被覆盖) 与 `summary` (没有任何下一轮 agent 会读, 仅 `/handoff` 端点可见的人工观察功能弱于其带来的 agent 写作摩擦). `parseHandoff` 对缺失字段自动 fallback (`iteration→0`, `summary→""`, 数组→`[]`), 完全向后兼容.
+
 ## [0.7.0] - 2026-05-17
 
 ### Added
@@ -84,6 +90,7 @@
 - 首次运行初始化 `~/.config/cli-prompt-launcher/`.
 - Claude / Codex 流事件格式化输出 (`ClaudeStreamFormatter` / `CodexStreamFormatter`).
 
+[0.7.1]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.4.0...v0.5.0

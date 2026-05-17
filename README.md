@@ -99,13 +99,9 @@ handoff 形态 (agent 输出, 父进程消费):
 }
 <<JJ_HANDOFF_END>>
 
-# --loop refine (打磨式) — 字段更少, 父进程仅读 status
+# --loop refine (打磨式) — 极简, 跨轮信号只剩一个 bit
 <<JJ_HANDOFF>>
-{
-  "status": "end" | "continue",
-  "iteration": <number>,
-  "summary": "本轮做了什么 (≤80字)"
-}
+{"status": "end" | "continue"}
 <<JJ_HANDOFF_END>>
 ```
 

@@ -136,16 +136,12 @@ export function buildRefineProtocolPrompt(maxIter: number): string {
 
 你处于"打磨式"多轮循环 (本工程 --loop refine). 每一轮都是**完全独立的全新会话**, 不继承任何历史. **下一轮 agent 看不到你写的任何东西** — 它只会拿到与你完全相同的原始 prompt, 从零开始重做同一件事, 像同一块石头反复打磨.
 
-跨轮唯一信号是你在最终回复末尾输出的状态位 (status=end/continue). 父进程**只读取 status 字段**, 不读其它.
+跨轮唯一信号是你在最终回复末尾输出的一字段 JSON, 父进程**只读 status**.
 
 你必须在最终回复的**最后**单独成段输出, 不要解释这个机制:
 
 ${HANDOFF_BEGIN}
-{
-  "status": "end" | "continue",
-  "iteration": <number, 当前轮次>,
-  "summary": "本轮做了什么 (≤80字, 仅供人工观察)"
-}
+{"status": "end" | "continue"}
 ${HANDOFF_END}
 
 关于 status:
