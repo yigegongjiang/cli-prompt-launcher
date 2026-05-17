@@ -96,7 +96,7 @@ export function buildProtocolPrompt(maxIter: number): string {
 
 [JJ_LOOP_AUTO 协议 — 强制]
 
-你处于多轮自动循环模式 (本工程 --loop auto), 每一轮都是**独立的全新会话**, 不继承任何历史. 跨轮唯一通道是一份 handoff JSON, 由你在本轮最终回复末尾输出, 父进程会把它注入下一轮的新 agent.
+你处于"接力式"多轮循环 (本工程 --loop auto). 每一轮都是**独立的全新会话**, 不继承任何历史 — 像接力赛交棒, 不是马拉松. 跨轮唯一通道是一份 handoff JSON, 由你在本轮最终回复末尾输出, 父进程会把它注入下一轮的新 agent 作为 "previous_handoff" baton.
 
 你必须在最终回复的**最后**单独成段输出, 不要解释这个机制:
 
@@ -111,13 +111,48 @@ ${HANDOFF_BEGIN}
 ${HANDOFF_END}
 
 关于 status:
-- **status="end" 的门槛极高**: 仅当你**对自己本轮的工作非常满意, 任务全部达成, 绝对不再需要后续 agent 介入**时才允许. 哪怕只剩一处不确定, 也要写 "continue".
+- **status="end" 的门槛极高**: 仅当你**对自己本轮的工作非常满意, 整体任务全部达成, 绝对不再需要后续 agent 介入**时才允许. 哪怕只剩一处不确定, 也要写 "continue".
 - 其余一切情况 (有 next_actions / 有 blockers / 自己也不确定 / 只是"差不多") **必须** "continue".
 - 上限保护: 父进程会在第 ${maxIter} 轮强制停止, 不要把这当作偷懒的理由.
 
-关于 next_actions:
+关于 next_actions (接力式的核心):
 - status="continue" 时**必须**非空且具体到可执行的动作
 - 下一轮 agent 看不到你说过什么, 只看 next_actions, 写明白
+
+handoff 之外的内容你可以正常工作 / 解释 / 用工具, 互不影响.
+`;
+}
+
+// `--loop refine` protocol — emphasises full independence between turns.
+// The next turn receives ONLY the original prompt, verbatim — no previous handoff,
+// no next_actions, nothing. The only cross-turn signal consumed by the parent is
+// the end/continue status bit.
+export function buildRefineProtocolPrompt(maxIter: number): string {
+  return `
+
+---
+
+[JJ_LOOP_REFINE 协议 — 强制]
+
+你处于"打磨式"多轮循环 (本工程 --loop refine). 每一轮都是**完全独立的全新会话**, 不继承任何历史. **下一轮 agent 看不到你写的任何东西** — 它只会拿到与你完全相同的原始 prompt, 从零开始重做同一件事, 像同一块石头反复打磨.
+
+跨轮唯一信号是你在最终回复末尾输出的状态位 (status=end/continue). 父进程**只读取 status 字段**, 不读其它.
+
+你必须在最终回复的**最后**单独成段输出, 不要解释这个机制:
+
+${HANDOFF_BEGIN}
+{
+  "status": "end" | "continue",
+  "iteration": <number, 当前轮次>,
+  "summary": "本轮做了什么 (≤80字, 仅供人工观察)"
+}
+${HANDOFF_END}
+
+关于 status:
+- **本模式偏向 end**. 你应当在本轮就把所有能做的事做完 — 不要"留给下一轮", 因为下一轮看不到你的任何笔记, 它会从零重做同一个 prompt.
+- "status=end" 的含义: 你已尽全力, **对本轮工作非常满意**, 并且认为**再让一个零上下文的全新 agent 跑同样的 prompt 也不会找到更多有价值的改动**. 这才是 end.
+- "status=continue" 的含义**仅**为: 你本轮已经尽力做完, 但仍然怀疑"换个全新视角 / 全新尝试, 可能能挖到更多东西". 这是表达"值得再来一次"的信号, 不是"任务清单还没做完".
+- 上限保护: 父进程会在第 ${maxIter} 轮强制停止.
 
 handoff 之外的内容你可以正常工作 / 解释 / 用工具, 互不影响.
 `;

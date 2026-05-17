@@ -2,6 +2,18 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) + [SemVer](https://semver.org/).
 
+## [0.7.0] - 2026-05-17
+
+### Added
+
+- `--loop refine` 打磨式自动循环: 与 `--loop auto` 并列的第二种自动模式. 每轮跑全新独立 child, 但**只把原始 prompt 原文喂给下一轮** — 不注入 previous_handoff / next_actions / summary, 跨轮唯一信号是 agent 自决的 end/continue 状态位. 适用"同一 prompt 反复独立打磨"场景 (大项目优化、refactor 试验等), agent 在每轮以全新视角重做同一件事, 像同一块石头反复打磨. CLI: `jjlauncher --loop refine [scene] 'prompt'`, 复用 `--max-iter` 与 `/handoff` 端点.
+- `/handoff` 端点响应新增 `mode` 字段 (`"auto"` / `"refine"`), 便于 curl 时识别当前模式.
+
+### Changed
+
+- `--loop auto` 协议片段措辞微调: 显式自称"接力式", 把 next_actions 标注为"接力式的核心", 与 refine 的"打磨式"形成对仗. 行为不变.
+- 两模式的协议片段完全隔离, 互不引用对方 — refine 协议中**不再提及 auto / next_actions / blockers**, 让 agent 在各自模式下心智模型纯净.
+
 ## [0.6.0] - 2026-05-17
 
 ### Added
@@ -72,6 +84,7 @@
 - 首次运行初始化 `~/.config/cli-prompt-launcher/`.
 - Claude / Codex 流事件格式化输出 (`ClaudeStreamFormatter` / `CodexStreamFormatter`).
 
+[0.7.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.3.0...v0.4.0

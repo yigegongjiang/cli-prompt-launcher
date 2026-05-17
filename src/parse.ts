@@ -5,7 +5,8 @@ export type Mode = "interactive" | "print" | "stream";
 
 export type LoopSpec =
   | { kind: "fixed"; count: number }
-  | { kind: "auto"; maxIter: number };
+  | { kind: "auto"; maxIter: number }
+  | { kind: "refine"; maxIter: number };
 
 export interface Invocation {
   engine: Engine;

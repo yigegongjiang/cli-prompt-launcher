@@ -11,6 +11,7 @@ import { ensureInitialized } from "./init";
 import {
   buildContinuePrompt,
   buildProtocolPrompt,
+  buildRefineProtocolPrompt,
   createAutoLoopState,
   parseHandoff,
   snapshotState,
@@ -37,12 +38,16 @@ Usage:
   ${NAME} [scene]                       Interactive REPL
   ${NAME} [scene] 'prompt'              Single-shot run (print)
   ${NAME} -s [scene] 'prompt'           Single-shot run with stream-JSON renderer
-  ${NAME} --loop N [scene] 'prompt'     Run the same single-shot N times serially
-  ${NAME} --loop auto [scene] 'prompt'  Auto loop: agent emits a handoff each turn,
-                                        stops when handoff.status="end" or after --max-iter
+  ${NAME} --loop N [scene] 'prompt'       Run the same single-shot N times serially
+  ${NAME} --loop auto [scene] 'prompt'    Relay loop: each turn picks up previous turn's handoff
+                                          (status/next_actions). Stops on status="end" or --max-iter
+  ${NAME} --loop refine [scene] 'prompt'  Refine loop: each turn runs the ORIGINAL prompt verbatim
+                                          in a fresh agent (no cross-turn carry-over except the
+                                          end/continue signal). Stops on status="end" or --max-iter
 
 Auto-loop options:
-  --max-iter N                          Safety cap for --loop auto (default ${DEFAULT_AUTO_MAX_ITER})
+  --max-iter N                            Safety cap for --loop auto / --loop refine
+                                          (default ${DEFAULT_AUTO_MAX_ITER})
 
 Prompt is a single positional argument. Use shell quoting for any complexity:
   ${NAME} d 'multi-line
@@ -206,7 +211,9 @@ function parseFlags(args: string[]): { args: string[]; wantStream: boolean; loop
     }
     if (arg === "--loop") {
       const next = args[i + 1];
-      if (next === undefined) throw new UsageError('`--loop` requires a value (positive integer or "auto").');
+      if (next === undefined) {
+        throw new UsageError('`--loop` requires a value (positive integer, "auto", or "refine").');
+      }
       loopValue = next;
       i++;
       continue;
@@ -229,17 +236,21 @@ function parseFlags(args: string[]): { args: string[]; wantStream: boolean; loop
   if (loopValue !== null) {
     if (loopValue === "auto") {
       loop = { kind: "auto", maxIter };
+    } else if (loopValue === "refine") {
+      loop = { kind: "refine", maxIter };
     } else {
       if (!/^\d+$/.test(loopValue) || Number(loopValue) < 1) {
-        throw new UsageError(`Invalid --loop value "${loopValue}". Expected a positive integer or "auto".`);
+        throw new UsageError(
+          `Invalid --loop value "${loopValue}". Expected a positive integer, "auto", or "refine".`,
+        );
       }
       if (sawMaxIter) {
-        throw new UsageError("`--max-iter` only applies to `--loop auto`.");
+        throw new UsageError("`--max-iter` only applies to `--loop auto` / `--loop refine`.");
       }
       loop = { kind: "fixed", count: Number(loopValue) };
     }
   } else if (sawMaxIter) {
-    throw new UsageError("`--max-iter` requires `--loop auto`.");
+    throw new UsageError("`--max-iter` requires `--loop auto` or `--loop refine`.");
   }
 
   return { args: filtered, wantStream, loop };
@@ -282,13 +293,20 @@ async function runFixedLoop(invocation: Invocation, count: number): Promise<numb
   return lastExit;
 }
 
-async function runAutoLoop(invocation: Invocation, maxIter: number): Promise<number> {
+type AgentLoopMode = "auto" | "refine";
+
+async function runAgentLoop(
+  invocation: Invocation,
+  maxIter: number,
+  mode: AgentLoopMode,
+): Promise<number> {
   if (!invocation.userText) {
-    throw new UsageError("`--loop auto` requires a prompt argument.");
+    throw new UsageError(`\`--loop ${mode}\` requires a prompt argument.`);
   }
   const originalPrompt = invocation.userText;
   const state = createAutoLoopState(maxIter);
-  const protocolSuffix = buildProtocolPrompt(maxIter);
+  const protocolSuffix =
+    mode === "auto" ? buildProtocolPrompt(maxIter) : buildRefineProtocolPrompt(maxIter);
 
   const server = Bun.serve({
     port: 0,
@@ -296,16 +314,17 @@ async function runAutoLoop(invocation: Invocation, maxIter: number): Promise<num
     fetch(req) {
       const url = new URL(req.url);
       if (url.pathname === "/handoff" || url.pathname === "/") {
-        return new Response(JSON.stringify(snapshotState(state), null, 2), {
-          headers: { "content-type": "application/json; charset=utf-8" },
-        });
+        return new Response(
+          JSON.stringify({ mode, ...snapshotState(state) }, null, 2),
+          { headers: { "content-type": "application/json; charset=utf-8" } },
+        );
       }
       return new Response("Not Found", { status: 404 });
     },
   });
 
   process.stderr.write(
-    `==> --loop auto (max ${maxIter}) — state: http://${server.hostname}:${server.port}/handoff\n`,
+    `==> --loop ${mode} (max ${maxIter}) — state: http://${server.hostname}:${server.port}/handoff\n`,
   );
 
   const stop = () => {
@@ -320,20 +339,25 @@ async function runAutoLoop(invocation: Invocation, maxIter: number): Promise<num
     while (true) {
       if (state.stopRequested) break;
       if (state.iteration >= maxIter) {
-        process.stderr.write(`==> --loop auto: max-iter ${maxIter} reached, stopping.\n`);
+        process.stderr.write(`==> --loop ${mode}: max-iter ${maxIter} reached, stopping.\n`);
         break;
       }
 
       state.iteration += 1;
       state.updatedAt = Date.now();
-      process.stderr.write(`==> loop ${state.iteration}/${maxIter} (auto)\n`);
+      process.stderr.write(`==> loop ${state.iteration}/${maxIter} (${mode})\n`);
 
       let accum = "";
       const onAgentText = (t: string) => {
         accum += t;
       };
 
-      const promptOverride = state.handoff ? buildContinuePrompt(originalPrompt, state.handoff) : undefined;
+      // auto: inject previous handoff as <previous_handoff> baton from round 2 onwards.
+      // refine: every round uses the original prompt verbatim — zero carry-over.
+      const promptOverride =
+        mode === "auto" && state.handoff
+          ? buildContinuePrompt(originalPrompt, state.handoff)
+          : undefined;
 
       const exit = await runInvocation(invocation, {
         onAgentText,
@@ -357,7 +381,7 @@ async function runAutoLoop(invocation: Invocation, maxIter: number): Promise<num
         );
         if (state.parseFailures >= 3) {
           process.stderr.write(
-            `==> --loop auto: ${state.parseFailures} consecutive parse failures, aborting.\n`,
+            `==> --loop ${mode}: ${state.parseFailures} consecutive parse failures, aborting.\n`,
           );
           return 3;
         }
@@ -400,8 +424,10 @@ try {
 
   const exitCode =
     invocation.loop.kind === "auto"
-      ? await runAutoLoop(invocation, invocation.loop.maxIter)
-      : await runFixedLoop(invocation, invocation.loop.count);
+      ? await runAgentLoop(invocation, invocation.loop.maxIter, "auto")
+      : invocation.loop.kind === "refine"
+        ? await runAgentLoop(invocation, invocation.loop.maxIter, "refine")
+        : await runFixedLoop(invocation, invocation.loop.count);
 
   process.exit(exitCode);
 } catch (error) {

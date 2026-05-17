@@ -19,8 +19,10 @@ jjlauncher [scene]                          Interactive REPL
 jjlauncher [scene] 'prompt'                 Single-shot (print)
 jjlauncher -s [scene] 'prompt'              Single-shot + stream-JSON renderer
 jjlauncher --loop N [scene] 'prompt'        Run the same single-shot N times serially
-jjlauncher --loop auto [scene] 'prompt'     Auto loop: agent emits a handoff each turn,
-                                            stops when handoff.status="end" or after --max-iter
+jjlauncher --loop auto [scene] 'prompt'     Relay loop: next turn picks up previous handoff's
+                                            next_actions; agent chains work across turns
+jjlauncher --loop refine [scene] 'prompt'   Refine loop: every turn re-runs the ORIGINAL prompt
+                                            in a fresh agent (no carry-over except end/continue)
 ```
 
 - 默认引擎 Claude Code: `jjlauncher d`. 前缀 `.` 走 Codex: `jjlauncher .d`.
@@ -56,40 +58,72 @@ jjlauncher d 'hi' --loop 3          # 串行跑 3 次
 jjlauncher -s code 'review' --loop 5
 ```
 
-### 自动循环 (`--loop auto`)
+### 自动循环 (`--loop auto` / `--loop refine`)
 
-每一轮跑一个**全新独立 child** (无任何历史), 跨轮唯一通道是 agent 在最终回复末尾输出的 handoff JSON. 父进程读取后注入下一轮的新 agent 作为 `<previous_handoff>`, 直到 agent 自己写 `status="end"` 或达到 `--max-iter` (默认 100) 上限.
+两种模式都让 agent 自己决定何时停止: 每轮跑一个**全新独立 child** (零历史), 用 handoff JSON 作为跨轮信号. 区别在于**跨轮带什么**.
+
+| 维度 | `--loop auto` (接力) | `--loop refine` (打磨) |
+| --- | --- | --- |
+| 跨轮带 | next_actions + summary + blockers | 只读 status (end/continue) |
+| 第 N 轮看到 | `<previous_handoff>` + `<original_task>` | 与第 1 轮完全相同的原始 prompt |
+| 任务关系 | 后一轮**接住**前一轮的子任务 | 后一轮**重做**同一个 prompt |
+| status 偏向 | continue (有 next_actions 就 continue) | end (本轮做完就该 end) |
+| 适用场景 | 多阶段任务推进 (翻译 + 提 PR、修一组 bug 等) | 同一 prompt 反复打磨 (大项目优化、refactor 试验等) |
 
 ```bash
+# 接力式: 第一轮拆任务, 后续轮逐项推进
 jjlauncher --loop auto d '把 README 翻译成英文并提交 PR'
 jjlauncher --loop auto -s code 'fix all type errors' --max-iter 50
+
+# 打磨式: 同一 prompt 每轮换全新视角重做
+jjlauncher --loop refine d '对整个项目做一次全面性能优化, 找出所有可优化点并修复'
+jjlauncher --loop refine code 'review src/ 找出所有可读性问题并修复' --max-iter 10
 ```
 
-设计意图: **每轮 agent 上下文全新**, 不背包袱, 不带"试过了, 放弃"的认知偏差 — 像接力赛, 不是马拉松. 状态在 baton, 不在记忆里.
+end 门槛 (两种模式都有, 措辞略不同):
 
-end 门槛: agent 必须**对自身工作非常满意, 任务全部达成, 绝对不需后续 agent 介入** 才能写 end; 否则一律 continue (协议片段由父进程自动注入 system prompt).
+- `auto`: agent 对本轮**+** 整体任务非常满意, 无遗留 next_actions, 才写 end
+- `refine`: agent 对本轮非常满意, **且**认为再让一个零上下文 agent 跑同样的 prompt 也找不出更多, 才写 end
 
 handoff 形态 (agent 输出, 父进程消费):
 
 ```
+# --loop auto (接力式)
 <<JJ_HANDOFF>>
 {
   "status": "end" | "continue",
   "iteration": <number>,
   "summary": "本轮做了什么 (≤80字)",
-  "next_actions": ["下一轮要做的事..."],
+  "next_actions": ["下一轮 agent 要做的事 1", "..."],
   "blockers": []
+}
+<<JJ_HANDOFF_END>>
+
+# --loop refine (打磨式) — 字段更少, 父进程仅读 status
+<<JJ_HANDOFF>>
+{
+  "status": "end" | "continue",
+  "iteration": <number>,
+  "summary": "本轮做了什么 (≤80字)"
 }
 <<JJ_HANDOFF_END>>
 ```
 
-启动时 stderr 会打印一个本地观察端点 `http://127.0.0.1:<port>/handoff`, 进程结束自动关闭, 零文件落盘:
+启动时 stderr 会打印一个本地观察端点, 形如:
 
-```bash
-curl http://127.0.0.1:53811/handoff   # 看当前 baton + iteration + history
+```
+==> --loop refine (max 100) — state: http://127.0.0.1:53811/handoff
 ```
 
-终止条件 | exit code:
+curl 时**照抄那一行的 URL**:
+
+```bash
+curl http://127.0.0.1:53811/handoff   # 返回 mode + iteration + history JSON
+```
+
+端口由 OS 自动分配 (`port: 0`), 每次启动都不同, 进程结束自动关闭, 零文件落盘.
+
+终止条件 | exit code (两模式共用):
 
 | 情况 | exit |
 | --- | --- |
