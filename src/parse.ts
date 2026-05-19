@@ -13,12 +13,25 @@ export interface Invocation {
   mode: Mode;
   sceneId: string;
   userText?: string;
+  // When the original prompt contains `<<>>`, it is split into ≥2 non-empty segments
+  // and executed sequentially as independent single-shots. `userText` holds the first
+  // segment for backwards-compatible reads; `userTexts` is the actual trigger for
+  // serial execution.
+  userTexts?: string[];
   loop: LoopSpec;
 }
 
 export class UsageError extends Error {}
 
 export const DEFAULT_AUTO_MAX_ITER = 100;
+
+export const PROMPT_SEPARATOR = "<<>>";
+const SEPARATOR_SPLIT_RE = /\s*<<>>\s*/;
+
+function splitPrompt(prompt: string): string[] {
+  if (!prompt.includes(PROMPT_SEPARATOR)) return [prompt];
+  return prompt.split(SEPARATOR_SPLIT_RE);
+}
 
 export function parseInvocation(args: string[], wantStream: boolean, loop: LoopSpec): Invocation {
   if (args.length > 2) {
@@ -62,11 +75,28 @@ export function parseInvocation(args: string[], wantStream: boolean, loop: LoopS
   const prompt = args[1];
   if (prompt.length === 0) throw new UsageError("Empty prompt.");
 
+  const segments = splitPrompt(prompt);
+  const isSplit = segments.length > 1;
+
+  if (isSplit) {
+    if (segments.some((s) => s.length === 0)) {
+      throw new UsageError(
+        `Empty segment between \`${PROMPT_SEPARATOR}\` markers. Each segment must be non-empty.`,
+      );
+    }
+    if (loop.kind !== "fixed" || loop.count !== 1) {
+      throw new UsageError(
+        `Prompt with \`${PROMPT_SEPARATOR}\` is split into sequential steps and cannot combine with \`--loop\`.`,
+      );
+    }
+  }
+
   return {
     engine: resolved.engine,
     mode: wantStream ? "stream" : "print",
     sceneId: resolved.sceneId,
-    userText: prompt,
+    userText: segments[0],
+    userTexts: isSplit ? segments : undefined,
     loop,
   };
 }

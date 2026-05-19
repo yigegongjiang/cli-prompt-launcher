@@ -49,9 +49,23 @@ jjlauncher d 'I'\''m here'          # POSIX 经典拼接
 jjlauncher d <<<"I'm here"          # here-string (bash/zsh)
 ```
 
+### 顺序分段 (`<<>>`)
+
+在 prompt 中嵌入 `<<>>` 即把它拆成 N 段独立 single-shot, 依序串行执行 (每段一个全新 child, 零跨轮状态). 无需额外 flag:
+
+```bash
+jjlauncher d 'step 1 <<>> step 2 <<>> step 3'
+jjlauncher -s code 'review src/foo.ts <<>> review src/bar.ts'
+```
+
+- 分隔符两侧空白会被吃掉.
+- 至少 2 段且每段非空.
+- 与 `--loop` 互斥 (语义复合度过高, 单段需要重跑请去掉 `<<>>`).
+- 稳定性同 fixed loop: 任段失败 warn-continue, 跑满全部段, 返回最后一段 exit code.
+
 ### 循环执行
 
-仅非交互场景 (即同时给定 prompt 时) 可用. 等上一次 child 退出再启下一次, 任一次非 0 退出立即中止并返回该退出码.
+仅非交互场景 (即同时给定 prompt 时) 可用. 等上一次 child 退出再启下一次. 任一轮 child 非 0 退出或 spawn 异常都仅打 `[warn]` 并继续下一轮, loop 必跑满 N 次, 返回最后一轮 exit code.
 
 ```bash
 jjlauncher d 'hi' --loop 3          # 串行跑 3 次

@@ -53,6 +53,11 @@ Prompt is a single positional argument. Use shell quoting for any complexity:
   ${NAME} d 'multi-line
 prompt with $vars, "quotes", \\ backslashes — POSIX single-quote keeps it literal'
 
+Sequential prompts:
+  Embed \`<<>>\` to split one prompt into N independent single-shots, run in order:
+    ${NAME} d 'step 1 <<>> step 2 <<>> step 3'
+  Cannot combine with --loop (each segment runs exactly once).
+
 Scenes:
   ${scenes.join(", ")}
   Default is Claude Code, use . prefix for Codex, e.g. .d / .code
@@ -285,6 +290,34 @@ function looksLikeScriptPath(value: string | undefined): boolean {
 // child exit !=0, spawn errors, stream errors, handoff parse failures — all are
 // logged as `[warn]` and the loop proceeds. Only `--max-iter` (auto/refine) or the
 // configured count (fixed) terminates the loop. status="end" stops auto/refine early.
+
+// Sequential split: prompt contains `<<>>` → split into N independent single-shots,
+// each run as if a separate `jjlauncher` invocation. Same stability rule: a step
+// failure warns and the next step still runs; returns the last step's exit code.
+async function runSerialLoop(invocation: Invocation, prompts: string[]): Promise<number> {
+  let lastExit = 0;
+  const total = prompts.length;
+  for (let i = 0; i < total; i++) {
+    const prompt = prompts[i]!;
+    process.stderr.write(`==> step ${i + 1}/${total}\n`);
+    try {
+      lastExit = await runInvocation(invocation, { promptOverride: prompt });
+      if (lastExit !== 0) {
+        process.stderr.write(
+          `[warn] step ${i + 1}/${total}: child exited with code ${lastExit}${i + 1 < total ? "; proceeding to next step." : "."}\n`,
+        );
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      lastExit = 1;
+      process.stderr.write(
+        `[warn] step ${i + 1}/${total}: runInvocation threw: ${msg}${i + 1 < total ? "; proceeding to next step." : "."}\n`,
+      );
+    }
+  }
+  return lastExit;
+}
+
 async function runFixedLoop(invocation: Invocation, count: number): Promise<number> {
   let lastExit = 0;
   for (let i = 1; i <= count; i++) {
@@ -457,8 +490,9 @@ try {
   const { args, wantStream, loop } = parseFlags(rawArgs);
   const invocation = parseInvocation(args, wantStream, loop);
 
-  const exitCode =
-    invocation.loop.kind === "auto"
+  const exitCode = invocation.userTexts
+    ? await runSerialLoop(invocation, invocation.userTexts)
+    : invocation.loop.kind === "auto"
       ? await runAgentLoop(invocation, invocation.loop.maxIter, "auto")
       : invocation.loop.kind === "refine"
         ? await runAgentLoop(invocation, invocation.loop.maxIter, "refine")

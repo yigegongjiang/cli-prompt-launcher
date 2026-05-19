@@ -2,6 +2,13 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) + [SemVer](https://semver.org/).
 
+## [0.8.0] - 2026-05-19
+
+### Added
+
+- prompt 顺序分段: 在 prompt 中嵌入 `<<>>` (空双尖括号) 即把 prompt 拆成 N 段独立 single-shot 串行执行, 每段一个全新 child, 零跨轮状态. 无需新增 flag — 直接 `jjlauncher d 'step 1 <<>> step 2 <<>> step 3'`. 分隔符两侧空白被吃掉; 至少 2 段且每段非空否则 UsageError. 与 `--loop N (N>1)` / `--loop auto` / `--loop refine` 互斥 (语义复合度过高, 先简单实现). stderr 标 `==> step i/N` 进度. 选 `<<>>` 而非 `<>`: 后者在 HTML/SQL/英文写作中频繁出现会误触发; `<<>>` 在主流编程语言/英文文档中几乎不存在, 视觉对称, shell 单引号下零转义, 与已有 `<<JJ_HANDOFF>>` sentinel 风格一致.
+- 稳定性: 任一段 child 非 0 退出或 spawn 异常都仅打 `[warn]` 并继续下一段, 跑满全部段后返回最后一段 exit code — 与 fixed loop 的"绝对稳定"语义对齐.
+
 ## [0.7.2] - 2026-05-19
 
 ### Fixed
@@ -105,6 +112,7 @@
 - 首次运行初始化 `~/.config/cli-prompt-launcher/`.
 - Claude / Codex 流事件格式化输出 (`ClaudeStreamFormatter` / `CodexStreamFormatter`).
 
+[0.8.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.6.0...v0.7.0
