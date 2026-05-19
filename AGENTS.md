@@ -15,6 +15,19 @@
 
 `package.json#version` 经 `build.ts` 注入二进制, 必须与 tag 一致 (Actions 会做一致性校验, 不一致直接 fail).
 
+## 默认 Release 闭环
+
+收到 "改 X / 加 Y / 修 Z" 默认 = 完整 deploy 闭环, **不询问 / 不停顿 / 不只改不发**:
+
+1. 改代码/配置 → `bun run typecheck` + `bun run build` + `./dist/jjlauncher-darwin-arm64 version` 本地验证.
+2. lockstep bump: `package.json#version` + `CHANGELOG.md` 顶部新增 `## [X.Y.Z] - YYYY-MM-DD` 段 + 底部对比链接.
+3. `git commit -m "release: vX.Y.Z"` → `git tag -a vX.Y.Z -m "vX.Y.Z"` → `git push origin <branch> vX.Y.Z`.
+4. 等 GitHub Actions `Release` workflow success; 失败时读 log 修代码或按 [`deploy.md`](./deploy.md) `amend` 流程修上版, 不卡在 "要不要 deploy / workflow fail 了".
+
+完整命令、版本号规则与 amend 修上版 bug 流程见 [`deploy.md`](./deploy.md).
+
+**豁免发布闭环**: 用户明示 "只改不发 / 先看看 / 本地试"; 或改动仅限文档 (`*.md`)、`scenes/*.md`、注释、`.gitignore`、jjask 记录.
+
 ## 命名约定 (例外说明)
 
 - `package.json#name` = `jjlauncher` (不是 repo 名 `cli-prompt-launcher`). binary 名也是 `jjlauncher`.
