@@ -33,14 +33,14 @@ function splitPrompt(prompt: string): string[] {
   return prompt.split(SEPARATOR_SPLIT_RE);
 }
 
-export function parseInvocation(args: string[], wantStream: boolean, loop: LoopSpec): Invocation {
+export function parseInvocation(args: string[], wantPrint: boolean, loop: LoopSpec): Invocation {
   if (args.length > 2) {
     throw new UsageError("Too many arguments. Usage: jjlauncher [scene] [prompt]");
   }
 
   // 0 args → REPL with default scene
   if (args.length === 0) {
-    if (wantStream) throw new UsageError("`-s` requires a prompt argument.");
+    if (wantPrint) throw new UsageError("`-p` requires a prompt argument.");
     if (loop.kind !== "fixed" || loop.count > 1) {
       throw new UsageError("`--loop` requires a prompt argument (interactive mode is not loopable).");
     }
@@ -59,7 +59,7 @@ export function parseInvocation(args: string[], wantStream: boolean, loop: LoopS
 
   // 1 arg → REPL with given scene
   if (args.length === 1) {
-    if (wantStream) throw new UsageError("`-s` requires a prompt argument.");
+    if (wantPrint) throw new UsageError("`-p` requires a prompt argument.");
     if (loop.kind !== "fixed" || loop.count > 1) {
       throw new UsageError("`--loop` requires a prompt argument (interactive mode is not loopable).");
     }
@@ -93,7 +93,7 @@ export function parseInvocation(args: string[], wantStream: boolean, loop: LoopS
 
   return {
     engine: resolved.engine,
-    mode: wantStream ? "stream" : "print",
+    mode: wantPrint ? "print" : "stream",
     sceneId: resolved.sceneId,
     userText: segments[0],
     userTexts: isSplit ? segments : undefined,

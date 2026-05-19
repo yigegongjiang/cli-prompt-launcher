@@ -2,6 +2,20 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) + [SemVer](https://semver.org/).
 
+## [0.9.0] - 2026-05-19
+
+### Changed
+
+- **Breaking**: 非交互单跑的默认输出从 raw `print` 翻转为 `stream-JSON` 渲染. `jjlauncher [scene] 'prompt'` 现在直接走原 `-s` 路径 (`ClaudeStreamFormatter` / `CodexStreamFormatter` 渲染 stream-json). 理由: 实际使用中 stream 形态体验明显优于 raw stdout (有进度/分段/工具调用可见), 应该作为默认; `-s` 长期只是一个"我每次都得加"的肌肉记忆 flag, 与"无 flag 推导 mode"的设计意图相悖.
+
+### Added
+
+- 标志 `-p` / `--print` / `print`: 显式切回 raw print 透传模式 (不走 stream formatter). 与 v0.4.0 删除前的语义一致, 但定位反转 — 从"默认"降级为"按需". 兼容 `--loop` / `<<>>` 顺序分段等所有现有组合.
+
+### Removed
+
+- 标志 `-s` / `--stream` / `stream`: 默认即 stream, flag 冗余 (思路同 v0.4.0 删除 `-p`). 显式带 `-s` 会被当成未知 scene 报错 — 直接去掉即可.
+
 ## [0.8.0] - 2026-05-19
 
 ### Added
@@ -112,6 +126,7 @@
 - 首次运行初始化 `~/.config/cli-prompt-launcher/`.
 - Claude / Codex 流事件格式化输出 (`ClaudeStreamFormatter` / `CodexStreamFormatter`).
 
+[0.9.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.7.0...v0.7.1

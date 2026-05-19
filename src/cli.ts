@@ -36,8 +36,8 @@ function buildHelpText(): string {
 
 Usage:
   ${NAME} [scene]                       Interactive REPL
-  ${NAME} [scene] 'prompt'              Single-shot run (print)
-  ${NAME} -s [scene] 'prompt'           Single-shot run with stream-JSON renderer
+  ${NAME} [scene] 'prompt'              Single-shot run with stream-JSON renderer (default)
+  ${NAME} -p [scene] 'prompt'           Single-shot run with raw print passthrough
   ${NAME} --loop N [scene] 'prompt'       Run the same single-shot N times serially
   ${NAME} --loop auto [scene] 'prompt'    Relay loop: each turn picks up previous turn's handoff
                                           (status/next_actions). Stops on status="end" or --max-iter
@@ -201,8 +201,8 @@ async function handleMetaCommand(arg: string | undefined): Promise<number | null
   }
 }
 
-function parseFlags(args: string[]): { args: string[]; wantStream: boolean; loop: LoopSpec } {
-  let wantStream = false;
+function parseFlags(args: string[]): { args: string[]; wantPrint: boolean; loop: LoopSpec } {
+  let wantPrint = false;
   let loopValue: string | null = null;
   let maxIter = DEFAULT_AUTO_MAX_ITER;
   let sawMaxIter = false;
@@ -210,8 +210,8 @@ function parseFlags(args: string[]): { args: string[]; wantStream: boolean; loop
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
-    if (arg === "--stream" || arg === "-s" || arg === "stream") {
-      wantStream = true;
+    if (arg === "--print" || arg === "-p" || arg === "print") {
+      wantPrint = true;
       continue;
     }
     if (arg === "--loop") {
@@ -258,7 +258,7 @@ function parseFlags(args: string[]): { args: string[]; wantStream: boolean; loop
     throw new UsageError("`--max-iter` requires `--loop auto` or `--loop refine`.");
   }
 
-  return { args: filtered, wantStream, loop };
+  return { args: filtered, wantPrint, loop };
 }
 
 function getRawArgs(argv: string[]): string[] {
@@ -487,8 +487,8 @@ if (metaExit !== null) process.exit(metaExit);
 ensureInitialized();
 
 try {
-  const { args, wantStream, loop } = parseFlags(rawArgs);
-  const invocation = parseInvocation(args, wantStream, loop);
+  const { args, wantPrint, loop } = parseFlags(rawArgs);
+  const invocation = parseInvocation(args, wantPrint, loop);
 
   const exitCode = invocation.userTexts
     ? await runSerialLoop(invocation, invocation.userTexts)

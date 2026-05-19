@@ -16,8 +16,8 @@ curl -fsSL https://raw.githubusercontent.com/yigegongjiang/cli-prompt-launcher/m
 
 ```
 jjlauncher [scene]                          Interactive REPL
-jjlauncher [scene] 'prompt'                 Single-shot (print)
-jjlauncher -s [scene] 'prompt'              Single-shot + stream-JSON renderer
+jjlauncher [scene] 'prompt'                 Single-shot + stream-JSON renderer (default)
+jjlauncher -p [scene] 'prompt'              Single-shot, raw print passthrough
 jjlauncher --loop N [scene] 'prompt'        Run the same single-shot N times serially
 jjlauncher --loop auto [scene] 'prompt'     Relay loop: next turn picks up previous handoff's
                                             next_actions; agent chains work across turns
@@ -41,7 +41,7 @@ jjlauncher d '多行 prompt
 含 $variable、"双引号"、反斜杠 \、特殊符号 ¥%&* 一概原样'
 
 jjlauncher d "$(cat prompt.md)"     # 文件喂入 (shell 处理, jjlauncher 不需要 -f)
-jjlauncher -s code 'review 这段 diff'
+jjlauncher -p code 'review 这段 diff'   # 切回 raw print 模式 (不渲染 stream-JSON)
 
 # 内容含 ' 时三种应对 (仍是单行):
 jjlauncher d "I'm here"             # 切双引号
@@ -55,7 +55,7 @@ jjlauncher d <<<"I'm here"          # here-string (bash/zsh)
 
 ```bash
 jjlauncher d 'step 1 <<>> step 2 <<>> step 3'
-jjlauncher -s code 'review src/foo.ts <<>> review src/bar.ts'
+jjlauncher -p code 'review src/foo.ts <<>> review src/bar.ts'
 ```
 
 - 分隔符两侧空白会被吃掉.
@@ -68,8 +68,8 @@ jjlauncher -s code 'review src/foo.ts <<>> review src/bar.ts'
 仅非交互场景 (即同时给定 prompt 时) 可用. 等上一次 child 退出再启下一次. 任一轮 child 非 0 退出或 spawn 异常都仅打 `[warn]` 并继续下一轮, loop 必跑满 N 次, 返回最后一轮 exit code.
 
 ```bash
-jjlauncher d 'hi' --loop 3          # 串行跑 3 次
-jjlauncher -s code 'review' --loop 5
+jjlauncher d 'hi' --loop 3          # 串行跑 3 次 (默认 stream)
+jjlauncher -p code 'review' --loop 5   # 切回 print 再循环
 ```
 
 ### 自动循环 (`--loop auto` / `--loop refine`)
@@ -87,7 +87,7 @@ jjlauncher -s code 'review' --loop 5
 ```bash
 # 接力式: 第一轮拆任务, 后续轮逐项推进
 jjlauncher --loop auto d '把 README 翻译成英文并提交 PR'
-jjlauncher --loop auto -s code 'fix all type errors' --max-iter 50
+jjlauncher --loop auto code 'fix all type errors' --max-iter 50
 
 # 打磨式: 同一 prompt 每轮换全新视角重做
 jjlauncher --loop refine d '对整个项目做一次全面性能优化, 找出所有可优化点并修复'
