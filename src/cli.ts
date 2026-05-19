@@ -281,14 +281,30 @@ function looksLikeScriptPath(value: string | undefined): boolean {
   return /\.(?:[cm]?[jt]sx?)$/i.test(value);
 }
 
+// Stability rule for all loop modes: a single iteration never aborts the loop.
+// child exit !=0, spawn errors, stream errors, handoff parse failures — all are
+// logged as `[warn]` and the loop proceeds. Only `--max-iter` (auto/refine) or the
+// configured count (fixed) terminates the loop. status="end" stops auto/refine early.
 async function runFixedLoop(invocation: Invocation, count: number): Promise<number> {
   let lastExit = 0;
   for (let i = 1; i <= count; i++) {
     if (count > 1) {
       process.stderr.write(`==> loop ${i}/${count}\n`);
     }
-    lastExit = await runInvocation(invocation);
-    if (lastExit !== 0) break;
+    try {
+      lastExit = await runInvocation(invocation);
+      if (lastExit !== 0) {
+        process.stderr.write(
+          `[warn] loop ${i}/${count}: child exited with code ${lastExit}${i < count ? "; proceeding to next iteration." : "."}\n`,
+        );
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      lastExit = 1;
+      process.stderr.write(
+        `[warn] loop ${i}/${count}: runInvocation threw: ${msg}${i < count ? "; proceeding to next iteration." : "."}\n`,
+      );
+    }
   }
   return lastExit;
 }
@@ -359,16 +375,30 @@ async function runAgentLoop(
           ? buildContinuePrompt(originalPrompt, state.handoff)
           : undefined;
 
-      const exit = await runInvocation(invocation, {
-        onAgentText,
-        promptOverride,
-        systemSuffix: protocolSuffix,
-      });
+      let exit: number;
+      try {
+        exit = await runInvocation(invocation, {
+          onAgentText,
+          promptOverride,
+          systemSuffix: protocolSuffix,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        state.lastError = `iteration ${state.iteration} threw: ${msg}`;
+        state.updatedAt = Date.now();
+        process.stderr.write(
+          `[warn] loop ${state.iteration}/${maxIter} (${mode}): runInvocation threw: ${msg}; proceeding to next iteration.\n`,
+        );
+        continue;
+      }
 
       if (exit !== 0) {
-        state.lastError = `child exited with code ${exit}`;
+        state.lastError = `iteration ${state.iteration} exited with code ${exit}`;
         state.updatedAt = Date.now();
-        return exit;
+        process.stderr.write(
+          `[warn] loop ${state.iteration}/${maxIter} (${mode}): child exited with code ${exit}; proceeding to next iteration.\n`,
+        );
+        continue;
       }
 
       const parsed = parseHandoff(accum);
@@ -376,15 +406,10 @@ async function runAgentLoop(
         state.parseFailures += 1;
         state.lastError = `no handoff sentinel found in turn ${state.iteration}`;
         state.updatedAt = Date.now();
+        const tail = accum.slice(-400).replace(/\n/g, "\\n");
         process.stderr.write(
-          `[warn] no handoff in turn ${state.iteration} (consecutive failures=${state.parseFailures})\n`,
+          `[warn] loop ${state.iteration}/${maxIter} (${mode}): no handoff sentinel (consecutive failures=${state.parseFailures}); proceeding to next iteration. agent_output_tail="${tail}"\n`,
         );
-        if (state.parseFailures >= 3) {
-          process.stderr.write(
-            `==> --loop ${mode}: ${state.parseFailures} consecutive parse failures, aborting.\n`,
-          );
-          return 3;
-        }
         continue;
       }
 
@@ -405,6 +430,16 @@ async function runAgentLoop(
       }
     }
 
+    // Surface a non-zero exit if the loop never produced a successful handoff
+    // (e.g., every iteration crashed or failed to emit the sentinel). Otherwise
+    // a clean run — including max-iter termination after at least one good
+    // handoff — returns 0.
+    if (state.history.length === 0 && state.lastError) {
+      process.stderr.write(
+        `[error] --loop ${mode}: no successful handoff across ${state.iteration} iteration(s). lastError=${state.lastError}\n`,
+      );
+      return 4;
+    }
     return 0;
   } finally {
     stop();

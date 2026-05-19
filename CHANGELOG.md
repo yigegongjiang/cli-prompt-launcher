@@ -2,6 +2,21 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) + [SemVer](https://semver.org/).
 
+## [0.7.2] - 2026-05-19
+
+### Fixed
+
+- `--loop N` (fixed 模式) 第 1 轮 child 非 0 退出会直接 break, 后续轮次丢失 — 用户原意"跑满 N 次"被违背. 现在任意一轮 exit≠0 或 `runInvocation` 抛异常都只打 `[warn]` 并继续下一轮, loop 必跑满 N 次, 返回最后一轮的 exit code.
+- `--loop auto` / `--loop refine` 子进程 exit≠0 时立即 `return exit` 中断整个循环 — 与 fixed 模式行为不一致, 单轮抖动就让多轮自动化 game over. 现在同样 warn-continue, 由 `--max-iter` 或 `status="end"` 唯一决定终止.
+
+### Changed
+
+- 移除 `--loop auto/refine` "连续 3 次 handoff 解析失败 abort" 硬规则 (原退出码 3). 由 `--max-iter` 兜底, 与"绝对稳定, 要么执行要么不执行"的循环承诺一致.
+- handoff 解析失败时 stderr 新增 `agent_output_tail="..."` (LLM 输出末尾 400 字符, 换行转义), 便于排查"为什么没出 sentinel". 同时所有 loop 警告统一格式 `[warn] loop i/N (mode): ...; proceeding to next iteration.`.
+- `Bun.spawn` 异常不再一律改写成"Command not found", 保留 ENOENT / EACCES 等原始 errno, 仅在确认是"找不到"时才追加 PATH 提示.
+- 子进程 stdout 流读取加 try/catch — 中途断流 / 解码失败不再冒泡到外层 loop, 让 child 正常 exit 返回真实 code.
+- `runAgentLoop` 全程零成功 handoff 时返回退出码 4 (新), 并打 `[error]` 总结日志. 至少有一次成功 handoff 的运行仍返回 0.
+
 ## [0.7.1] - 2026-05-17
 
 ### Changed
@@ -90,6 +105,7 @@
 - 首次运行初始化 `~/.config/cli-prompt-launcher/`.
 - Claude / Codex 流事件格式化输出 (`ClaudeStreamFormatter` / `CodexStreamFormatter`).
 
+[0.7.2]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.5.0...v0.6.0

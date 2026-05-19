@@ -120,8 +120,8 @@ async function runCommand(plan: LaunchPlan, opts: RunOptions): Promise<number> {
         stdout: "inherit",
         stderr: "inherit",
       });
-    } catch {
-      throw new Error(`Command \`${plan.binary}\` not found. Make sure it is installed and available in PATH.`);
+    } catch (err) {
+      throw new Error(spawnErrorMessage(plan.binary, err));
     }
     return await child.exited;
   }
@@ -138,8 +138,8 @@ async function runCommand(plan: LaunchPlan, opts: RunOptions): Promise<number> {
       stdout: "pipe",
       stderr: "inherit",
     });
-  } catch {
-    throw new Error(`Command \`${plan.binary}\` not found. Make sure it is installed and available in PATH.`);
+  } catch (err) {
+    throw new Error(spawnErrorMessage(plan.binary, err));
   }
 
   const stdout = child.stdout;
@@ -150,37 +150,54 @@ async function runCommand(plan: LaunchPlan, opts: RunOptions): Promise<number> {
   const decoder = new TextDecoder();
   let buffer = "";
 
-  for await (const chunk of stdout) {
-    const text = decoder.decode(chunk, { stream: true });
+  // A mid-stream error (broken pipe, decode failure, etc.) must not abort the
+  // outer loop. Surface the error to stderr and let the child finish exiting so
+  // the caller sees a real exit code rather than an exception bubble.
+  try {
+    for await (const chunk of stdout) {
+      const text = decoder.decode(chunk, { stream: true });
 
-    if (!processLine) {
-      // print mode: raw text passthrough + feed scanner
-      process.stdout.write(text);
-      opts.onAgentText?.(text);
-      continue;
+      if (!processLine) {
+        // print mode: raw text passthrough + feed scanner
+        process.stdout.write(text);
+        opts.onAgentText?.(text);
+        continue;
+      }
+
+      // stream mode: split JSONL lines, hand each to formatter (which writes + feeds scanner)
+      buffer += text;
+      while (true) {
+        const nl = buffer.indexOf("\n");
+        if (nl === -1) break;
+
+        const line = buffer.slice(0, nl).trim();
+        buffer = buffer.slice(nl + 1);
+
+        if (line) processLine(line);
+      }
     }
 
-    // stream mode: split JSONL lines, hand each to formatter (which writes + feeds scanner)
-    buffer += text;
-    while (true) {
-      const nl = buffer.indexOf("\n");
-      if (nl === -1) break;
-
-      const line = buffer.slice(0, nl).trim();
-      buffer = buffer.slice(nl + 1);
-
-      if (line) processLine(line);
+    const tail = buffer.trim();
+    if (tail) {
+      if (processLine) processLine(tail);
+      else {
+        process.stdout.write(tail);
+        opts.onAgentText?.(tail);
+      }
     }
-  }
-
-  const tail = buffer.trim();
-  if (tail) {
-    if (processLine) processLine(tail);
-    else {
-      process.stdout.write(tail);
-      opts.onAgentText?.(tail);
-    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[warn] stdout stream error from \`${plan.binary}\`: ${msg}\n`);
   }
 
   return await child.exited;
+}
+
+function spawnErrorMessage(binary: string, err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  const looksLikeMissing = /ENOENT|not found|no such file/i.test(msg);
+  if (looksLikeMissing) {
+    return `Failed to spawn \`${binary}\`: ${msg}. Make sure it is installed and available in PATH.`;
+  }
+  return `Failed to spawn \`${binary}\`: ${msg}`;
 }
