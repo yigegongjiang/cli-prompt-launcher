@@ -13,7 +13,8 @@ bun run build
 ## 2. 写版本
 
 - 版本号: 默认递增 PATCH (第三位); 新功能 → MINOR; 不兼容改动 → MAJOR.
-- `CHANGELOG.md` 顶部新增 `## [X.Y.Z] - YYYY-MM-DD` 段并列改动, 底部补 `[X.Y.Z]:` 对比链接. CHANGELOG 只写面向用户的精简摘要; commit 详情由 Actions `generate_release_notes` 自动汇总到 Release.
+- `CHANGELOG.md` 顶部新增 `## [X.Y.Z] - YYYY-MM-DD` 段并列改动, 底部补 `[X.Y.Z]:` 对比链接.
+- **CHANGELOG 条目硬约束**: 每条一行, 只写"做了什么 + 关键 flag / 文件 / 行为". 不写设计理由 / 实现细节 / "为什么这么选" / 跨版本引用 (如"思路同 vX"). 这些属于 commit message — commit 详情由 Actions `generate_release_notes` 自动汇总到 Release, 不进 CHANGELOG.
 - `package.json#version` 与 tag 一致 (tag 含 `v`, version 不含, 经 `build.ts` 注入二进制). Actions 第一步会校验, 不一致直接 fail.
 
 ## 3. 发布
