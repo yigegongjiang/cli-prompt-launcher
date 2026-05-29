@@ -2,6 +2,12 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) + [SemVer](https://semver.org/).
 
+## [0.10.0] - 2026-05-29
+
+### Fixed
+
+- claude 引擎 `--mcp-config <file>` 指向的文件不存在 (如项目无 `.mcp.json`) 时, claude 启动报 `MCP config file not found` 退出. 现在透传前过滤掉不存在的 `--mcp-config` 文件路径: inline JSON (`{` 开头) 与存在的文件保留; 某 `--mcp-config` 无有效来源则整组剔除; `--strict-mcp-config` 保留 (无文件即"零 MCP", 贴合隔离本意). 效果: MCP 开关回到"项目放不放 `.mcp.json`"的文件粒度, 全局 `args` 固定写死不再因缺文件报错.
+
 ## [0.9.0] - 2026-05-19
 
 ### Changed
@@ -126,6 +132,7 @@
 - 首次运行初始化 `~/.config/cli-prompt-launcher/`.
 - Claude / Codex 流事件格式化输出 (`ClaudeStreamFormatter` / `CodexStreamFormatter`).
 
+[0.10.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.7.1...v0.7.2

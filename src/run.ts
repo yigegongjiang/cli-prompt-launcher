@@ -4,6 +4,7 @@ import { type Invocation } from "./parse";
 import { ClaudeStreamFormatter } from "./format-claude-stream";
 import { CodexStreamFormatter } from "./format-codex-stream";
 import { renderLaunchPreview } from "./preview";
+import { existsSync } from "node:fs";
 
 const CLAUDE_BIN = "claude";
 const CODEX_BIN = "codex";
@@ -59,7 +60,7 @@ function buildFinalArgs(invocation: Invocation, configArgs: string[], sceneText:
 
   if (isCodexNonInteractive) args.push("exec");
 
-  args.push(...configArgs);
+  args.push(...(isClaude ? sanitizeMcpConfig(configArgs) : configArgs));
 
   // Scene injection — structural binding, not user-configurable
   if (isClaude) {
@@ -75,6 +76,33 @@ function buildFinalArgs(invocation: Invocation, configArgs: string[], sceneText:
   }
 
   return args;
+}
+
+/**
+ * Drop non-existent `--mcp-config` file paths so a missing project `.mcp.json`
+ * doesn't abort `claude` startup ("MCP config file not found"). Inline JSON
+ * (starts with `{`) and existing files are kept; a `--mcp-config` left with no
+ * surviving source is removed entirely. `--strict-mcp-config` is preserved —
+ * with no `.mcp.json` it means "no MCP at all", matching the isolation intent.
+ */
+function sanitizeMcpConfig(args: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] !== "--mcp-config") {
+      out.push(args[i]);
+      continue;
+    }
+    // `--mcp-config <configs...>` is variadic: gather following non-flag tokens.
+    const sources: string[] = [];
+    let j = i + 1;
+    for (; j < args.length && !args[j].startsWith("-"); j++) {
+      sources.push(args[j]);
+    }
+    const kept = sources.filter((s) => s.trimStart().startsWith("{") || existsSync(s));
+    if (kept.length > 0) out.push("--mcp-config", ...kept);
+    i = j - 1; // skip consumed source tokens
+  }
+  return out;
 }
 
 // --- Single execution path ---
