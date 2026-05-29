@@ -19,6 +19,9 @@ export interface Invocation {
   // serial execution.
   userTexts?: string[];
   loop: LoopSpec;
+  // Tokens after a literal `--` on the CLI, forwarded verbatim to the child
+  // engine (claude/codex). Appended after scene injection, before the prompt.
+  passthroughArgs?: string[];
 }
 
 export class UsageError extends Error {}
@@ -33,7 +36,14 @@ function splitPrompt(prompt: string): string[] {
   return prompt.split(SEPARATOR_SPLIT_RE);
 }
 
-export function parseInvocation(args: string[], wantPrint: boolean, loop: LoopSpec): Invocation {
+export function parseInvocation(
+  args: string[],
+  wantPrint: boolean,
+  loop: LoopSpec,
+  passthrough: string[] = [],
+): Invocation {
+  const passthroughArgs = passthrough.length > 0 ? passthrough : undefined;
+
   if (args.length > 2) {
     throw new UsageError("Too many arguments. Usage: jjlauncher [scene] [prompt]");
   }
@@ -49,6 +59,7 @@ export function parseInvocation(args: string[], wantPrint: boolean, loop: LoopSp
       mode: "interactive",
       sceneId: getDefaultSceneId(),
       loop: { kind: "fixed", count: 1 },
+      passthroughArgs,
     };
   }
 
@@ -68,6 +79,7 @@ export function parseInvocation(args: string[], wantPrint: boolean, loop: LoopSp
       mode: "interactive",
       sceneId: resolved.sceneId,
       loop: { kind: "fixed", count: 1 },
+      passthroughArgs,
     };
   }
 
@@ -98,5 +110,6 @@ export function parseInvocation(args: string[], wantPrint: boolean, loop: LoopSp
     userText: segments[0],
     userTexts: isSplit ? segments : undefined,
     loop,
+    passthroughArgs,
   };
 }

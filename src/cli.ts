@@ -58,6 +58,12 @@ Sequential prompts:
     ${NAME} d 'step 1 <<>> step 2 <<>> step 3'
   Cannot combine with --loop (each segment runs exactly once).
 
+Passthrough to claude/codex:
+  Everything after \`--\` is forwarded verbatim to the underlying engine,
+  appended after scene injection and before the prompt (no validation):
+    ${NAME} code 'fix the bug' -- --model opus --add-dir ../shared
+    ${NAME} .d -- --search          (Codex flag, REPL with no prompt)
+
 Scenes:
   ${scenes.join(", ")}
   Default is Claude Code, use . prefix for Codex, e.g. .d / .code
@@ -201,15 +207,22 @@ async function handleMetaCommand(arg: string | undefined): Promise<number | null
   }
 }
 
-function parseFlags(args: string[]): { args: string[]; wantPrint: boolean; loop: LoopSpec } {
+function parseFlags(args: string[]): { args: string[]; wantPrint: boolean; loop: LoopSpec; passthrough: string[] } {
   let wantPrint = false;
   let loopValue: string | null = null;
   let maxIter = DEFAULT_AUTO_MAX_ITER;
   let sawMaxIter = false;
   const filtered: string[] = [];
+  const passthrough: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
+    // Everything after a literal `--` is forwarded verbatim to the child engine;
+    // it bypasses jjlauncher's own flag parsing entirely.
+    if (arg === "--") {
+      passthrough.push(...args.slice(i + 1));
+      break;
+    }
     if (arg === "--print" || arg === "-p" || arg === "print") {
       wantPrint = true;
       continue;
@@ -258,7 +271,7 @@ function parseFlags(args: string[]): { args: string[]; wantPrint: boolean; loop:
     throw new UsageError("`--max-iter` requires `--loop auto` or `--loop refine`.");
   }
 
-  return { args: filtered, wantPrint, loop };
+  return { args: filtered, wantPrint, loop, passthrough };
 }
 
 function getRawArgs(argv: string[]): string[] {
@@ -487,8 +500,8 @@ if (metaExit !== null) process.exit(metaExit);
 ensureInitialized();
 
 try {
-  const { args, wantPrint, loop } = parseFlags(rawArgs);
-  const invocation = parseInvocation(args, wantPrint, loop);
+  const { args, wantPrint, loop, passthrough } = parseFlags(rawArgs);
+  const invocation = parseInvocation(args, wantPrint, loop, passthrough);
 
   const exitCode = invocation.userTexts
     ? await runSerialLoop(invocation, invocation.userTexts)

@@ -69,6 +69,11 @@ function buildFinalArgs(invocation: Invocation, configArgs: string[], sceneText:
     args.push("-c", `developer_instructions=${JSON.stringify(sceneText)}`);
   }
 
+  // User passthrough (CLI tokens after `--`) — forwarded verbatim, no sanitization.
+  // Placed after scene injection and before the prompt so the sole positional
+  // (the prompt) stays last, keeping these in the child's flag region.
+  if (invocation.passthroughArgs?.length) args.push(...invocation.passthroughArgs);
+
   if (userText) {
     args.push(userText);
   } else if (isCodexNonInteractive) {

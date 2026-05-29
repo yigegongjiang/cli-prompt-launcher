@@ -2,6 +2,12 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) + [SemVer](https://semver.org/).
 
+## [0.11.0] - 2026-05-29
+
+### Added
+
+- 命令行 `--` 透传: `jj [scene] 'prompt' -- <args>` 把 `--` 之后的 token 原样追加给底层 claude/codex (置于 scene 注入后、prompt 前), REPL 亦支持。
+
 ## [0.10.0] - 2026-05-29
 
 ### Fixed
@@ -128,6 +134,7 @@
 - 首次运行初始化 `~/.config/cli-prompt-launcher/`。
 - Claude / Codex 流事件格式化输出。
 
+[0.11.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.7.2...v0.8.0
