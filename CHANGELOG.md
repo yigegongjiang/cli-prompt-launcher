@@ -2,6 +2,12 @@
 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) + [SemVer](https://semver.org/).
 
+## [0.11.1] - 2026-06-09
+
+### Fixed
+
+- `--mcp-config=<path>` 等号连接格式现在正确执行文件存在性检查, 与空格分隔格式行为一致。
+
 ## [0.11.0] - 2026-05-29
 
 ### Added
@@ -134,6 +140,7 @@
 - 首次运行初始化 `~/.config/cli-prompt-launcher/`。
 - Claude / Codex 流事件格式化输出。
 
+[0.11.1]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/yigegongjiang/cli-prompt-launcher/compare/v0.8.0...v0.9.0

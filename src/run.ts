@@ -93,6 +93,13 @@ function buildFinalArgs(invocation: Invocation, configArgs: string[], sceneText:
 function sanitizeMcpConfig(args: string[]): string[] {
   const out: string[] = [];
   for (let i = 0; i < args.length; i++) {
+    if (args[i].startsWith("--mcp-config=")) {
+      const source = args[i].slice("--mcp-config=".length);
+      if (source.trimStart().startsWith("{") || existsSync(source)) {
+        out.push("--mcp-config", source);
+      }
+      continue;
+    }
     if (args[i] !== "--mcp-config") {
       out.push(args[i]);
       continue;
